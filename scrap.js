@@ -1,5 +1,5 @@
 // scraper.js
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const fs = require('fs');
 const csv = require('csv-parser');
