@@ -24,7 +24,8 @@
     "fs": "^0.0.1-security",
     "googleapis": "^159.0.0",
     "node-cron": "^4.2.1",
-    "playwright": "^1.55.0",
+    "playwright-core": "^1.54.1",
     "tough-cookie": "^5.1.2"
   }
 }
+
