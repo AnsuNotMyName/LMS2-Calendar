@@ -43,19 +43,26 @@ app.get('/oauth2callback', async (req, res) => {
         // Save tokens + password for this user
         saveToken(username, { ...tokens, password });
 
-        res.send(`✅ Credentials saved and ready for scheduled scraping.`);
+        res.send(`Credentials saved and ready for scheduled scraping.`);
     } catch (err) {
         console.error(err);
         res.status(500).send("Error during OAuth or scraper setup");
     }
 });
 
+const tokensFile = 'tokens.json';
+
 async function runScrape() {
     console.log("🚀 Running scraper for all users...");
     const tokensFile = 'tokens.json';
-    if (!fs.existsSync(tokensFile)) return console.log("No users found");
-
-    const allUsers = JSON.parse(fs.readFileSync(tokensFile));
+    let allUsers = {};
+    try {
+        const raw = fs.readFileSync(tokensFile, 'utf8').trim();
+        allUsers = raw ? JSON.parse(raw) : {};
+    } catch (err) {
+        console.error(`Failed to parse ${tokensFile}:`, err.message);
+        return;
+    }
     for (const username in allUsers) {
         const user = allUsers[username];
         console.log(`🔄 Processing user: ${username}`);
@@ -83,7 +90,15 @@ async function runScrape() {
         }
     }
 };
-runScrape();
+
+if (!fs.existsSync(tokensFile)) return console.log("No users found");
+else {
+    // Initial run
+    runScrape();
+    // Schedule every 10 minutes
+    //setInterval(runScrape, 10 * 60 * 1000);
+}
+//runScrape();
 
 app.listen(3000, () => {
     console.log("Server running at http://localhost:3000");

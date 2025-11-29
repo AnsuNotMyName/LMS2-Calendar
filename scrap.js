@@ -70,7 +70,7 @@ async function run(username, password) {
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
 
-    await page.goto("https://lms.psu.ac.th/calendar/view.php");
+    await page.goto("https://lms.psu.ac.th/login/index.php?loginredirect=1");
 
     // Login
     await page.type("input[name=username]", username, { delay: 10 });
@@ -78,11 +78,15 @@ async function run(username, password) {
     await page.click("button[id=loginbtn]");
     await page.waitForLoadState();
 
+    await page.goto("https://lms.psu.ac.th/calendar/view.php");
+    await page.waitForLoadState();
+
     // Count events
     const eventCount = await page.$$eval("div.event", (nodes) => nodes.length);
     console.log(`📌 Found ${eventCount} events`);
 
     let eventData = [];
+    let Course = "Unknown Course";
 
     for (let i = 1; i <= eventCount; i++) {
         const selector = `div.event:nth-child(${i})`;
@@ -97,6 +101,44 @@ async function run(username, password) {
         const cID = await parent.getAttribute("data-course-id");
         const evTitle = await parent.getAttribute("data-event-title");
         const evType = await parent.getAttribute("data-event-eventtype");
+        
+        // Check for closed events and duplicates BEFORE navigating
+        const duplicate = await isDuplicate(evID);
+        if (duplicate) {
+            console.log(`⏩ EventID ${evID} already exists, skipping`);
+            continue;
+        }
+        if (evType === "close") {
+            console.log(`⏩ EventID ${evID} is closed, skipping`);
+            continue;
+        }
+        // Candidate selectors: sometimes the course name is under the 3rd child,
+        // other times under the 4th. Test both safely using locators.
+        const selA = `${selector} > div:nth-child(1) > div:nth-child(2) > div:nth-child(3) > div:nth-child(2)`;
+        const selB = `${selector} > div:nth-child(1) > div:nth-child(2) > div:nth-child(4) > div:nth-child(2)`;
+
+        const locA = page.locator(selA);
+        const locB = page.locator(selB);
+
+        // If selA exists, decide based on its class attribute. If it exactly
+        // equals 'description-content col-11' use selB; otherwise use selA.
+        // If selA doesn't exist, fall back to selB when present.
+        let courseDiv;
+        if (await locA.count() > 0) {
+            const classAttr = (await locA.first().getAttribute('class')) || '';
+            if (classAttr.trim() === 'description-content col-11') {
+                courseDiv = selB;
+            } else {
+                courseDiv = selA;
+            }
+        } else {
+            courseDiv = (await locB.count() > 0) ? selB : selA;
+        }
+
+        const rawCourse = await page.locator(courseDiv).textContent();
+        Course = rawCourse ? rawCourse.trim() : 'Unknown Course';
+
+        console.log(`Course is ${Course}`);
 
         // get the link before clicking
         const evLink = await page.$eval(
@@ -117,48 +159,19 @@ async function run(username, password) {
         if (closes.startsWith("Closes:") || closes.startsWith("Due:")) {
             closes = closes.split(" ").slice(1).join(" ");
         }
+        await page.goBack();
 
         const evData = { evID, cID, evTitle, evType, opened, closes };
         eventData.push(evData);
-
-        await page.goBack();
-        await page.waitForLoadState("networkidle");
-
-        const duplicate = await isDuplicate(evID);
-        if (duplicate) {
-            console.log(`⏩ EventID ${evID} already exists, skipping`);
-            continue;
-        }
-        if (evType === "close") {
-            console.log(`⏩ EventID ${evID} is closed, skipping`);
-            continue;
-        }
 
         // Write temp CSV for this event
         await write(temp, [evData]);
 
         // Map course name
-        let Course = "Unknown Course";
-        switch (cID) {
-            case '830': Course = "สัตว์เลี้ยงเพื่อนรัก"; break;
-            case '10052': Course = "Calculus Lecture"; break;
-            case '1043': Course = "Chemical Lecture"; break;
-            case '4590': Course = "Biology Lecture"; break;
-            case '9952': Course = "Biology Labs"; break;
-            case '1199': Course = "Physics Lecture"; break;
-            case '1195': Course = "Physics Labs"; break;
-            case '10207': Course = "Happy and Peaceful Life"; break;
-            case '8050': Course = "Chemical Labs"; break;
-            case '10019': Course = "Essentials English"; break;
-            case '1182': Course = "Preparation course of faculty of science"; break;
-            case '6134': Course = "Self learning English"; break;
-        }
-
-        console.log(`📖 Course ID ${cID} → ${Course}`);
 
         const glendar = {
             summary: evTitle,
-            description: `วิชา ${Course}`,
+            description: `${Course}`,
             location: evLink,
             start: {
                 dateTime: new Date(opened).toISOString(),
@@ -173,6 +186,7 @@ async function run(username, password) {
 
         console.log("📅 Inserting event:", glendar.summary);
         await insertEvent(glendar, username);
+        await page.waitForLoadState("networkidle");
     }
 
     // Write full check CSV
