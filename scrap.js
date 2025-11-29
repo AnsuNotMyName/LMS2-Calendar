@@ -67,7 +67,14 @@ async function run(username, password) {
     }
 
     // Launch browser
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+        executablePath: process.env.CHROMIUM_PATH,
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-gpu'
+        ]
+    });
     const page = await browser.newPage();
 
     await page.goto("https://lms.psu.ac.th/login/index.php?loginredirect=1");
@@ -101,7 +108,7 @@ async function run(username, password) {
         const cID = await parent.getAttribute("data-course-id");
         const evTitle = await parent.getAttribute("data-event-title");
         const evType = await parent.getAttribute("data-event-eventtype");
-        
+
         // Check for closed events and duplicates BEFORE navigating
         const duplicate = await isDuplicate(evID);
         if (duplicate) {
